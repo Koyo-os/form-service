@@ -1,0 +1,8 @@
+reqs:
+  update_req_type : "request.form.update"
+  create_req_type : "request.form.create"
+  delete_req_type : "request.form.delete"
+rabbitmq_url : "amqp://rabbitmq:5672"
+queue_name : "votes"
+req_exchange : "requests"
+out_exchange : "votes"
