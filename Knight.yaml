@@ -1,0 +1,16 @@
+project: knight
+variables: {
+  INPUT: "cmd/main.go"
+  OUTPUT: "bin/app"
+}
+pipeline:
+    - name: "deps"
+      cmds:
+        - go mod tidy
+    - name: "build"
+      cmds:
+        - go build -o $(OUTPUT) $(INPUT)
+    - name: "run"
+      cmds:
+        - knight build
+        - $(OUTPUT)
