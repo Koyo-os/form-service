@@ -13,7 +13,7 @@ type Event struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-func NewEvent(payload []byte, Type string) *Event {
+func NewEvent(Type string, payload []byte) *Event {
 	return &Event{
 		ID:        uuid.New().String(),
 		Payload:   payload,
