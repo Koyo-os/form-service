@@ -11,6 +11,7 @@ type (
 	Repository interface {
 		Create(*entity.Form) error
 		Update(uuid.UUID, string, any) error
+		Get(uuid.UUID) (*entity.Form, error)
 		DeleteForm(uuid.UUID) error
 		DeleteQuestion(uuid.UUID, uint) error
 	}
@@ -21,6 +22,7 @@ type (
 
 	Casher interface {
 		DoCashing(ctx context.Context, key string, payload any) error // payload must to be pointer
+		GetCashFor(ctx context.Context, key string) ([]byte, error)
 		RemoveFromCash(ctx context.Context, key string) error
 	}
 )
