@@ -9,7 +9,7 @@ import (
 
 type (
 	Repository interface {
-		Create(*entity.Form) error
+		Create(any) error
 		Update(uuid.UUID, string, any) error
 		Get(uuid.UUID) (*entity.Form, error)
 		DeleteForm(uuid.UUID) error
