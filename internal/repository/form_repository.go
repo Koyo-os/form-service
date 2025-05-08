@@ -20,11 +20,11 @@ func Init(db *gorm.DB, logger *logger.Logger) *Repository {
 	}
 }
 
-func (repo *Repository) Create(form *entity.Form) error {
-	res := repo.db.Create(form)
+func (repo *Repository) Create(payload any) error {
+	res := repo.db.Create(payload)
 
 	if err := res.Error; err != nil {
-		repo.logger.Error("error create form", zap.Error(err))
+		repo.logger.Error("error create entity", zap.Error(err))
 
 		return err
 	}
