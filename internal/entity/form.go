@@ -11,17 +11,17 @@ import (
 type (
 	Question struct {
 		gorm.Model
-		FormID      uuid.UUID
+		FormID      uuid.UUID `gorm:"type:uuid"`
 		Content     string
 		OrderNumber uint
+		Form        Form `gorm:"foreignKey:FormID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	}
 
 	Form struct {
-		gorm.Model
-		ID          uuid.UUID
+		ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
 		Description string
 		Closed      bool
-		Questions   []Question
+		Questions   []Question `gorm:"foreignKey:FormID"`
 		Author      string
 		CreatedAt   time.Time
 	}
