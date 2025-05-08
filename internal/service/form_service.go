@@ -40,6 +40,33 @@ func (s *Service) CreateForm(form *entity.Form) error {
 	return nil
 }
 
+func (s *Service) CreateQuestion(question *entity.Question) error {
+	if err := s.repo.Create(question); err != nil {
+		return err
+	}
+
+	form, err := s.repo.Get(question.FormID)
+	if err != nil {
+		return err
+	}
+
+	cherr := make(chan error, 0)
+
+	go func() {
+		cherr <- retrier.Do(3, 5, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		})
+	}()
+
+	if err = retrier.Do(3, 5, func() error {
+		return s.casher.DoCashing(s.ctx, form.ID.String(), form)
+	}); err != nil {
+		return err
+	}
+
+	return <-cherr
+}
+
 func (s *Service) UpdateStatus(form_id string, closed bool) error {
 	uid, err := uuid.Parse(form_id)
 	if err != nil {
@@ -50,11 +77,40 @@ func (s *Service) UpdateStatus(form_id string, closed bool) error {
 		return err
 	}
 
+	form, err := s.repo.Get(uid)
+	if err != nil {
+		return err
+	}
+
 	cherr := make(chan error, 0)
 
 	go func() {
 		cherr <- retrier.Do(3, 5, func() error {
-			return s.casher.DoCashing(s.ctx)
+			return s.casher.DoCashing(s.ctx, form_id, form)
 		})
 	}()
+
+	if err = retrier.Do(3, 5, func() error {
+		return s.publisher.Publish(form, "form.created")
+	}); err != nil {
+		return err
+	}
+
+	if err = <-cherr; err != nil {
+		return err
+	}
+
+	return nil
 }
+
+func (s *Service) UpdateDescription(form_id string, desc string) error {
+	uid, err := uuid.Parse(form_id)
+	if err != nil {
+		return err
+	}
+
+	if err = s.repo.Update(uid, "Description", desc); err != nil {
+
+	}
+}
+
