@@ -143,7 +143,7 @@ func (p *Consumer) ConsumeMessages(outputChan chan entity.Event) {
 			p.logger.Debug("received new event",
 				zap.String("event_id", event.ID),
 				zap.String("routing_key", event.Type),
-				zap.Time("timestamp", event.TimeStamp))
+				zap.Time("timestamp", event.Timestamp))
 
 			outputChan <- event
 		}
