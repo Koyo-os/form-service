@@ -48,7 +48,7 @@ func newLogger(cfg Config) (*Logger, error) {
 	cores = append(cores, stdoutCore)
 
 	if cfg.LogFile != "" {
-		logFile, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		logFile, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
 		}
