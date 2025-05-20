@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const QUEUE_TYPE = "direct"
+
 type Consumer struct {
 	conn      *amqp.Connection
 	channel   *amqp.Channel
@@ -27,20 +29,6 @@ func Init(cfg *config.Config, logger *logger.Logger, conn *amqp.Connection) (*Co
 		return nil, err
 	}
 
-	if err = channel.ExchangeDeclare(
-		cfg.RequestExchange,
-		"fanout",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
-		channel.Close()
-		conn.Close()
-		return nil, err
-	}
-
 	return &Consumer{
 		conn:      conn,
 		channel:   channel,
@@ -50,25 +38,25 @@ func Init(cfg *config.Config, logger *logger.Logger, conn *amqp.Connection) (*Co
 	}, nil
 }
 
-func (p *Consumer) Subscribe(queueName, exchange, routingKey string) error {
+func (p *Consumer) Subscribe(exchange, routingKey string) error {
 	_, err := p.channel.QueueDeclare(
-		queueName, // name
-		true,      // durable
-		false,     // autoDelete
-		false,     // exclusive
-		false,     // noWait
-		nil,       // args
+		p.cfg.QueueName, // name
+		true,            // durable
+		false,           // autoDelete
+		false,           // exclusive
+		false,           // noWait
+		nil,             // args
 	)
 	if err != nil {
 		return err
 	}
 
 	err = p.channel.QueueBind(
-		queueName,  // queue name
-		routingKey, // routing key
-		exchange,   // exchange name
-		false,      // noWait
-		nil,        // args
+		p.cfg.QueueName, // queue name
+		routingKey,      // routing key
+		exchange,        // exchange name
+		false,           // noWait
+		nil,             // args
 	)
 
 	return err
@@ -85,27 +73,13 @@ func (p *Consumer) ConsumeMessages(outputChan chan entity.Event) {
 			}
 		}
 
-		queue, err := p.channel.QueueDeclare(
-			"que", // name
-			true,  // durable
-			false, // delete when unused
-			false, // exclusive
-			false, // no-wait
-			nil,   // arguments
-		)
-		if err != nil {
-			p.logger.Error("failed to declare a queue", zap.Error(err))
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
 		for exchange := range p.exchanges {
-			err = p.channel.QueueBind(
-				queue.Name, // queue name
-				"",         // routing key
-				exchange,   // exchange
-				false,      // no-wait
-				nil,        // arguments
+			err := p.channel.QueueBind(
+				p.cfg.QueueName, // queue name
+				QUEUE_TYPE,      // routing key
+				exchange,        // exchange
+				false,           // no-wait
+				nil,             // arguments
 			)
 			if err != nil {
 				p.logger.Error("failed to bind queue to exchange",
@@ -115,13 +89,13 @@ func (p *Consumer) ConsumeMessages(outputChan chan entity.Event) {
 		}
 
 		msgs, err := p.channel.Consume(
-			queue.Name, // queue
-			"",         // consumer
-			true,       // auto-ack
-			false,      // exclusive
-			false,      // no-local
-			false,      // no-wait
-			nil,        // args
+			p.cfg.QueueName, // queue
+			"",              // consumer
+			true,            // auto-ack
+			false,           // exclusive
+			false,           // no-local
+			false,           // no-wait
+			nil,             // args
 		)
 		if err != nil {
 			p.logger.Error("failed to register consumer", zap.Error(err))
@@ -173,13 +147,13 @@ func (p *Consumer) reconnect() error {
 
 	for exchange := range p.exchanges {
 		err = p.channel.ExchangeDeclare(
-			exchange, // name
-			"fanout", // type
-			true,     // durable
-			false,    // auto-deleted
-			false,    // internal
-			false,    // no-wait
-			nil,      // arguments
+			exchange,   // name
+			QUEUE_TYPE, // type
+			true,       // durable
+			false,      // auto-deleted
+			false,      // internal
+			false,      // no-wait
+			nil,        // arguments
 		)
 		if err != nil {
 			p.logger.Error("failed to redeclare exchange",
