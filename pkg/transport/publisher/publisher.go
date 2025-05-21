@@ -59,10 +59,10 @@ func (p *Publisher) Publish(poll any, routingKey string) error {
 	}
 
 	err = p.channel.Publish(
-		p.cfg.OutputExcange, // exchange
-		routingKey,          // routing key
-		false,               // mandatory
-		false,               // immediate
+		p.cfg.OutputExchange, // exchange
+		routingKey,           // routing key
+		false,                // mandatory
+		false,                // immediate
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        eventJson,
