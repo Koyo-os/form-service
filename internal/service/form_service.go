@@ -103,6 +103,28 @@ func (s *Service) UpdateStatus(form_id string, closed bool) error {
 	return nil
 }
 
+func (s Service) Update(form_id uuid.UUID, values any) error {
+	if err := s.repo.UpdateMany(form_id, values); err != nil {
+		return err
+	}
+
+	cherr := make(chan error, 1)
+
+	go func() {
+		cherr <- retrier.Do(3, 5, func() error {
+			return s.casher.DoCashing(s.ctx, form_id.String(), values)
+		})
+	}()
+
+	if err := retrier.Do(3, 5, func() error {
+		return s.publisher.Publish(values, "form.updated")
+	}); err != nil {
+		return err
+	}
+
+	return <-cherr
+}
+
 func (s *Service) UpdateDescription(form_id string, desc string) error {
 	uid, err := uuid.Parse(form_id)
 	if err != nil {
