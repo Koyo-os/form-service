@@ -63,6 +63,20 @@ func (repo *Repository) Update(ID uuid.UUID, key string, value any) error {
 	return nil
 }
 
+func (repo *Repository) UpdateMany(ID uuid.UUID, value any) error {
+	res := repo.db.Where("ID = ?", ID).Updates(value)
+
+	if err := res.Error; err != nil {
+		repo.logger.Error("error update many",
+			zap.String("id", ID.String()),
+			zap.Error(err))
+
+		return err
+	}
+
+	return nil
+}
+
 func (repo *Repository) DeleteForm(formID uuid.UUID) error {
 	res := repo.db.Where(&entity.Form{
 		ID: formID,
