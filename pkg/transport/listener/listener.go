@@ -3,6 +3,7 @@ package listener
 import (
 	"context"
 	"encoding/json"
+	"github.com/bytedance/sonic"
 
 	"github.com/Koyo-os/form-service/internal/entity"
 	"github.com/Koyo-os/form-service/internal/service"
@@ -50,6 +51,45 @@ func (list *Listener) Listen(ctx context.Context) {
 
 				if err := list.service.CreateForm(form); err != nil {
 					list.logger.Error("error create form", zap.Error(err))
+					continue
+				}
+			case list.cfg.Reqs.UpdateRequestType:
+				form := new(entity.Form)
+
+				if err := json.Unmarshal(event.Payload, &form); err != nil {
+					list.logger.Error("error unmarshal payload to form",
+						zap.String("event_id", event.ID),
+						zap.String("event_type", event.Type),
+						zap.Error(err))
+					continue
+				}
+
+				if err := list.service.Update(form.ID, form); err != nil {
+					list.logger.Error("error update form",
+						zap.String("event_id", event.ID),
+						zap.String("form_id", form.ID.String()),
+						zap.Error(err))
+					continue
+				}
+
+			case list.cfg.Reqs.DeleteFormRequestType:
+				req := new(struct {
+					FormID string `json:"form_id"`
+				})
+
+				if err := sonic.Unmarshal(event.Payload, req); err != nil {
+					list.logger.Error("error unmarshal request from event payload",
+						zap.String("event_id", event.ID),
+						zap.String("event_type", event.Type),
+						zap.Error(err))
+					continue
+				}
+
+				if err := list.service.DeleteForm(req.FormID); err != nil {
+					list.logger.Error("error delete form",
+						zap.String("event_id", event.ID),
+						zap.String("form_id", req.FormID),
+						zap.Error(err))
 					continue
 				}
 			}
