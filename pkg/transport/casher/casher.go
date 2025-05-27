@@ -21,6 +21,11 @@ type Casher struct {
 	logger *logger.Logger // Logger for error tracking and debugging
 }
 
+func (c *Casher) RemoveFromCash(ctx context.Context, key string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 // Init creates a new Casher instance with the provided Redis client and logger
 // This is a simple constructor that doesn't require error handling
 func Init(client *redis.Client, logger *logger.Logger) *Casher {
@@ -38,7 +43,7 @@ func Init(client *redis.Client, logger *logger.Logger) *Casher {
 //   - payload: Raw bytes of the data to be cached
 //
 // Returns an error if the Redis operation fails
-func (c *Casher) AddToCash(ctx context.Context, key string, payload []byte) error {
+func (c *Casher) AddToCash(ctx context.Context, key string, payload any) error {
 	// Format the key using the template and store the payload
 	res := c.client.Set(ctx, fmt.Sprintf(FORM_KEY_TEMPLATE, key), payload, 0)
 
