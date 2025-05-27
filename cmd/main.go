@@ -3,6 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/Koyo-os/form-service/internal/entity"
 	"github.com/Koyo-os/form-service/internal/repository"
 	"github.com/Koyo-os/form-service/internal/service"
@@ -18,9 +23,6 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 func main() {
@@ -65,6 +67,11 @@ func main() {
 	db, err := retrier.Connect(10, 10, func() (*gorm.DB, error) {
 		return gorm.Open(mysql.Open(dsn))
 	})
+	if err != nil{
+		logger.Error("error initialyze database", 
+		zap.String("dsn", dsn),
+		zap.Error(err))
+	}
 
 	repo := repository.Init(db, logger)
 
@@ -110,7 +117,7 @@ func main() {
 
 	cashers := casher.Init(redisConn, logger)
 
-	core := service.Init(cashers, repo, publish)
+	core := service.Init(cashers, repo, publish, 10 * time.Second)
 
 	list := listener.Init(eventChan, logger, cfg, core)
 
@@ -128,5 +135,7 @@ func main() {
 	if err = publish.Close(); err != nil {
 		logger.Error("error close publisher", zap.Error(err))
 	}
-
+	if err = cons.Close(); err != nil {
+		logger.Error("error close consumer", zap.Error(err))
+	}
 }
