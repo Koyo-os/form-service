@@ -1,3 +1,4 @@
+// Package listener provides event handling functionality for form-related operations
 package listener
 
 import (
@@ -12,13 +13,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// Listener handles incoming events and routes them to appropriate service methods
 type Listener struct {
-	inputChan chan entity.Event
-	logger    *logger.Logger
-	service   *service.Service
-	cfg       *config.Config
+	inputChan chan entity.Event // Channel for receiving events
+	logger    *logger.Logger    // Logger for error tracking
+	service   *service.Service  // Service layer for business logic
+	cfg       *config.Config    // Application configuration
 }
 
+// Init creates a new Listener instance with all required dependencies
 func Init(
 	inputChan chan entity.Event,
 	logger *logger.Logger,
@@ -33,12 +36,18 @@ func Init(
 	}
 }
 
+func (list *Listener) Close() {}
+
+// Listen starts the event listening loop
+// It processes incoming events based on their type and routes them to appropriate handlers
+// The loop continues until the context is cancelled
 func (list *Listener) Listen(ctx context.Context) {
 	for {
 		select {
 		case event := <-list.inputChan:
 			switch event.Type {
 			case list.cfg.Reqs.CreateRequestType:
+				// Handle form creation events
 				form := new(entity.Form)
 
 				if err := json.Unmarshal(event.Payload, &form); err != nil {
@@ -53,7 +62,9 @@ func (list *Listener) Listen(ctx context.Context) {
 					list.logger.Error("error create form", zap.Error(err))
 					continue
 				}
+
 			case list.cfg.Reqs.UpdateRequestType:
+				// Handle form update events
 				form := new(entity.Form)
 
 				if err := json.Unmarshal(event.Payload, &form); err != nil {
@@ -73,6 +84,7 @@ func (list *Listener) Listen(ctx context.Context) {
 				}
 
 			case list.cfg.Reqs.DeleteFormRequestType:
+				// Handle form deletion events
 				req := new(struct {
 					FormID string `json:"form_id"`
 				})
