@@ -22,7 +22,7 @@ type (
 	}
 
 	Casher interface {
-		DoCashing(ctx context.Context, key string, payload any) error // payload must be pointer
+		AddToCash(ctx context.Context, key string, payload any) error // payload must be pointer
 		GetCashFor(ctx context.Context, key string) ([]byte, error)
 		RemoveFromCash(ctx context.Context, key string) error
 	}
