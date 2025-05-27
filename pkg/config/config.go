@@ -14,11 +14,18 @@ type Config struct {
 		DeleteQuestionRequestType string `yaml:"delete_question_req_type"`
 		DeleteFormRequestType     string `yaml:"delete_form_req_type"`
 	} `yaml:"reqs"`
-	RabbitmqUrl     string `yaml:"rabbitmq_url"`
-	RequestExchange string `yaml:"req_exchange"`
-	OutputExchange  string `yaml:"out_exchange"`
-	Dsn             string `yaml:"dsn"`
-	QueueName       string `yaml:"queue_name"`
+	Urls struct {
+		Redis    string `yaml:"redis"`
+		Rabbitmq string `yaml:"rabbitmq"`
+	} `yaml:"urls"`
+	Exchange struct {
+		Request string `yaml:"request"`
+		Output  string `yaml:"output"`
+	}
+	Queue struct{
+		Request string `yaml:"request"`
+		Output string `yaml:"output"`
+	}
 }
 
 func Init(path string) (*Config, error) {
@@ -34,8 +41,6 @@ func Init(path string) (*Config, error) {
 	if err = yaml.NewDecoder(file).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode error: %v", err)
 	}
-
-	cfg.QueueName = "que"
 
 	return &cfg, nil
 }
