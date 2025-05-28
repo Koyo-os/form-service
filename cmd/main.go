@@ -67,10 +67,10 @@ func main() {
 	db, err := retrier.Connect(10, 10, func() (*gorm.DB, error) {
 		return gorm.Open(mysql.Open(dsn))
 	})
-	if err != nil{
-		logger.Error("error initialyze database", 
-		zap.String("dsn", dsn),
-		zap.Error(err))
+	if err != nil {
+		logger.Error("error initialyze database",
+			zap.String("dsn", dsn),
+			zap.Error(err))
 	}
 
 	repo := repository.Init(db, logger)
@@ -117,7 +117,7 @@ func main() {
 
 	cashers := casher.Init(redisConn, logger)
 
-	core := service.Init(cashers, repo, publish, 10 * time.Second)
+	core := service.Init(cashers, repo, publish, 10*time.Second)
 
 	list := listener.Init(eventChan, logger, cfg, core)
 
