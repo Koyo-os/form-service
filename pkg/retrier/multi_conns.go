@@ -36,7 +36,11 @@ type RetrierOpts struct {
 // Example Usage:
 //
 //	connections, err := MultiConnects(3, dialDatabase, &RetrierOpts{Count: 3, Interval: 1})
-func MultiConnects[T any](count uint8, connFunc func() (T, error), retrierOpts *RetrierOpts) ([]T, error) {
+func MultiConnects[T any](
+	count uint8,
+	connFunc func() (T, error),
+	retrierOpts *RetrierOpts,
+) ([]T, error) {
 	// Initialize slice to hold all connections
 	conns := make([]T, count)
 
@@ -46,9 +50,13 @@ func MultiConnects[T any](count uint8, connFunc func() (T, error), retrierOpts *
 	for i := range conns {
 		if retrierOpts != nil {
 			// With retry logic
-			conns[i], err = Connect(uint8(retrierOpts.Count), retrierOpts.Interval, func() (T, error) {
-				return connFunc()
-			})
+			conns[i], err = Connect(
+				uint8(retrierOpts.Count),
+				retrierOpts.Interval,
+				func() (T, error) {
+					return connFunc()
+				},
+			)
 			if err != nil {
 				// Return immediately on first error
 				return nil, err
