@@ -22,9 +22,9 @@ type Config struct {
 		Request string `yaml:"request"`
 		Output  string `yaml:"output"`
 	}
-	Queue struct{
+	Queue struct {
 		Request string `yaml:"request"`
-		Output string `yaml:"output"`
+		Output  string `yaml:"output"`
 	}
 }
 
