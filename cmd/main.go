@@ -11,7 +11,9 @@ import (
 	"github.com/Koyo-os/form-service/internal/entity"
 	"github.com/Koyo-os/form-service/internal/repository"
 	"github.com/Koyo-os/form-service/internal/service"
+	"github.com/Koyo-os/form-service/pkg/closer"
 	"github.com/Koyo-os/form-service/pkg/config"
+	"github.com/Koyo-os/form-service/pkg/health"
 	"github.com/Koyo-os/form-service/pkg/logger"
 	"github.com/Koyo-os/form-service/pkg/retrier"
 	"github.com/Koyo-os/form-service/pkg/transport/casher"
@@ -126,16 +128,19 @@ func main() {
 		return
 	}
 
+	closers := closer.NewCloserGroup(cashers, list, cons, publish)
+	health := health.NewHealthChecker(publish, cashers, cons)
+
+	go health.StartHealthCheckServer("8080")
 	go list.Listen(context.Background())
 	go cons.ConsumeMessages(eventChan)
 
 	<-signalChan
 	logger.Info("Shutting down...")
 
-	if err = publish.Close(); err != nil {
-		logger.Error("error close publisher", zap.Error(err))
-	}
-	if err = cons.Close(); err != nil {
-		logger.Error("error close consumer", zap.Error(err))
+	if err = closers.Close();err != nil{
+		logger.Error("error closed", zap.Error(err))
+
+		return
 	}
 }
