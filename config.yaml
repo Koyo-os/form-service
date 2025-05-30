@@ -1,9 +1,16 @@
 reqs:
-  update_req_type : "request.form.update"
-  create_req_type : "request.form.create"
-  delete_req_type : "request.form.delete"
-rabbitmq_url : "amqp://rabbitmq:5672"
-input_queue_name : "votes"
-req_queue_name : "requests"
-req_exchange : "requests"
-out_exchange : "votes"
+  update_req_type: "request.form.update"
+  create_req_type: "request.form.create"
+  delete_req_type: "request.form.delete"
+urls:
+  redis: "redis:6379"
+  rabbbitmq: "rabbitmq:5672"
+exchange:
+  request: "request"
+  output: "output"
+queue:
+  request: "request"
+  output: "output"
+health:
+  port: 8080
+  use: true
