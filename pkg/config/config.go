@@ -1,12 +1,5 @@
 package config
 
-import (
-	"fmt"
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
 type Config struct {
 	Reqs struct {
 		CreateRequestType         string `yaml:"create_req_type"`
@@ -21,26 +14,51 @@ type Config struct {
 	Exchange struct {
 		Request string `yaml:"request"`
 		Output  string `yaml:"output"`
-	}
+	} `yaml:"exchange"`
 	Queue struct {
 		Request string `yaml:"request"`
 		Output  string `yaml:"output"`
-	}
+	} `yaml:"queue"`
+	HealthCheck struct {
+		Port string `yaml:"port"`
+		Use bool   `yaml:"use"`
+	} `yaml:"health"`
 }
 
+
 func Init(path string) (*Config, error) {
-	var cfg Config
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("error open file: %v", err)
-	}
-
-	defer file.Close()
-
-	if err = yaml.NewDecoder(file).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode error: %v", err)
-	}
-
-	return &cfg, nil
+	return &Config{
+		Reqs: struct {
+			CreateRequestType         string `yaml:"create_req_type"`
+			UpdateRequestType         string `yaml:"update_req_type"`
+			DeleteQuestionRequestType string `yaml:"delete_question_req_type"`
+			DeleteFormRequestType     string `yaml:"delete_form_req_type"`
+		}{
+			CreateRequestType:         "request.form.created",
+			UpdateRequestType:         "request.form.updated",
+			DeleteQuestionRequestType: "request.question.deleted",
+			DeleteFormRequestType:     "request.form.deleted",
+		},
+		Urls: struct {
+			Redis    string `yaml:"redis"`
+			Rabbitmq string `yaml:"rabbitmq"`
+		}{
+			Redis:    "redis:6379",
+			Rabbitmq: "amqp://rabbitmq:5672",
+		},
+		Exchange: struct {
+			Request string `yaml:"request"`
+			Output  string `yaml:"output"`
+		}{
+			Request: "request",
+			Output: "output",
+		},
+		Queue: struct {
+			Request string `yaml:"request"`
+			Output  string `yaml:"output"`
+		}{
+			Request: "request",
+			Output:  "output",
+		},
+	}, nil
 }
