@@ -48,10 +48,10 @@ func main() {
 
 	logger := logger.Get()
 
-	cfg, err := config.Init(".env")
+	cfg, err := config.Init("config.yaml")
 	if err != nil {
 		logger.Error("error init config",
-			zap.String("path", ".env"),
+			zap.String("path", "config.yaml"),
 			zap.Error(err))
 		return
 	}
@@ -74,6 +74,8 @@ func main() {
 			zap.String("dsn", dsn),
 			zap.Error(err))
 	}
+
+	logger.Info("connected to mariadb", zap.String("dsn", dsn))
 
 	repo := repository.Init(db, logger)
 
