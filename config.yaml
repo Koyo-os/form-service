@@ -4,7 +4,7 @@ reqs:
   delete_req_type: "request.form.delete"
 urls:
   redis: "redis:6379"
-  rabbbitmq: "rabbitmq:5672"
+  rabbbitmq: "amqp://rabbitmq:5672"
 exchange:
   request: "request"
   output: "output"
