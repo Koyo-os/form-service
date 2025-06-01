@@ -21,10 +21,9 @@ type Config struct {
 	} `yaml:"queue"`
 	HealthCheck struct {
 		Port string `yaml:"port"`
-		Use bool   `yaml:"use"`
+		Use  bool   `yaml:"use"`
 	} `yaml:"health"`
 }
-
 
 func Init(path string) (*Config, error) {
 	return &Config{
@@ -51,7 +50,7 @@ func Init(path string) (*Config, error) {
 			Output  string `yaml:"output"`
 		}{
 			Request: "request",
-			Output: "output",
+			Output:  "output",
 		},
 		Queue: struct {
 			Request string `yaml:"request"`
