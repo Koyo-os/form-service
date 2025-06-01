@@ -31,7 +31,7 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
-	var eventChan chan entity.Event
+	eventChan := make(chan entity.Event, 100) // Add buffer for better performance
 
 	logCfg := logger.Config{
 		LogFile:   "app.log",
@@ -73,9 +73,16 @@ func main() {
 		logger.Error("error initialyze database",
 			zap.String("dsn", dsn),
 			zap.Error(err))
+
+		return
 	}
 
 	logger.Info("connected to mariadb", zap.String("dsn", dsn))
+
+	if err := db.AutoMigrate(&entity.Form{}, &entity.Question{}); err != nil {
+		logger.Error("failed to migrate database", zap.Error(err))
+		return
+	}
 
 	repo := repository.Init(db, logger)
 
@@ -90,14 +97,14 @@ func main() {
 		return
 	}
 
-	publish, err := publisher.Init(cfg, logger, rabbitmqConns[0])
+	publisher, err := publisher.Init(cfg, logger, rabbitmqConns[0])
 	if err != nil {
 		logger.Error("error initialize publisher", zap.Error(err))
 
 		return
 	}
 
-	cons, err := consumer.Init(cfg, logger, rabbitmqConns[1])
+	consumer, err := consumer.Init(cfg, logger, rabbitmqConns[1])
 	if err != nil {
 		logger.Error("error initialize consumer", zap.Error(err))
 
@@ -119,28 +126,32 @@ func main() {
 		return
 	}
 
-	cashers := casher.Init(redisConn, logger)
+	casher := casher.Init(redisConn, logger)
 
-	core := service.Init(cashers, repo, publish, 10*time.Second)
+	core := service.Init(casher, repo, publisher, 10*time.Second)
 
 	list := listener.Init(eventChan, logger, cfg, core)
 
-	if err = cons.Subscribe(cfg.Exchange.Request, "request.*", cfg.Queue.Request); err != nil {
+	if err = consumer.Subscribe(cfg.Exchange.Request, "request.*", cfg.Queue.Request); err != nil {
 		logger.Error("error subscribe to queue", zap.Error(err))
 		return
 	}
 
-	closers := closer.NewCloserGroup(cashers, list, cons, publish)
-	health := health.NewHealthChecker(publish, cashers, cons)
+	logger.Info("successsfully initialized", zap.String("app", "form-service"))
 
-	go health.StartHealthCheckServer("8080")
+	closers := closer.NewCloserGroup(logger, casher, list, consumer, publisher)
+	health := health.NewHealthChecker(logger, publisher, casher, consumer)
+
+	go health.StartHealthCheckServer(":8080")
 	go list.Listen(context.Background())
-	go cons.ConsumeMessages(eventChan)
+	go consumer.ConsumeMessages(eventChan)
+
+	logger.Info("service started")
 
 	<-signalChan
 	logger.Info("Shutting down...")
 
-	if err = closers.Close();err != nil{
+	if err = closers.Close(); err != nil {
 		logger.Error("error closed", zap.Error(err))
 
 		return
