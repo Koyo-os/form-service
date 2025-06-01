@@ -10,11 +10,4 @@ formatters:
     - gofumpt
     - goimports
     - golines
-issues:
-  option: value
-output:
-  option: value
-run:
-  option: value
-severity:
-  option: value
+
