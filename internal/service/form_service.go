@@ -2,11 +2,19 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Koyo-os/form-service/internal/entity"
 	"github.com/Koyo-os/form-service/pkg/retrier"
 	"github.com/google/uuid"
+)
+
+const (
+	DefaultRetryAttempts = 3
+	DefaultRetryDelay    = 5
 )
 
 // Service provides business logic for form management operations.
@@ -19,14 +27,6 @@ type Service struct {
 }
 
 // Init initializes and returns a new Service instance with dependencies.
-// It sets up a context with a default 10-second timeout for all service operations.
-// Parameters:
-//   - casher: Cache handler implementation
-//   - repo: Repository implementation for data access
-//   - publisher: Event publisher implementation
-//
-// Returns:
-//   - *Service: Initialized service instance
 func Init(casher Casher, repo Repository, publisher Publisher, timeout time.Duration) *Service {
 	return &Service{
 		casher:    casher,
@@ -41,36 +41,50 @@ func (s *Service) getContext() (context.Context, context.CancelFunc) {
 }
 
 // CreateForm creates a new form in the system.
-// It performs the following operations:
-//  1. Persists the form in the repository
-//  2. Publishes a "form.created" event
-//  3. Caches the form data (with retry logic)
-//
-// Parameters:
-//   - form: Pointer to the Form entity to create
-//
-// Returns:
-//   - error: Any error that occurs during the operation
 func (s *Service) CreateForm(form *entity.Form) error {
-	if err := s.repo.Create(form); err != nil {
-		return err
+	if form == nil {
+		return errors.New("form cannot be nil")
 	}
 
-	cherr := make(chan error, 1)
+	// 1. Critical operation first (database)
+	if err := s.repo.Create(form); err != nil {
+		return fmt.Errorf("failed to create form in repository: %w", err)
+	}
 
+	// 2. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
+
+	// Cache operation
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
-		cherr <- retrier.Do(3, 5, func() error {
+
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
 			return s.casher.AddToCash(ctx, form.ID.String(), form)
-		})
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
 	}()
 
-	if err := s.publisher.Publish(form, "form.created"); err != nil {
-		return err
-	}
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.created")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
 
-	if err := <-cherr; err != nil {
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
@@ -78,93 +92,109 @@ func (s *Service) CreateForm(form *entity.Form) error {
 }
 
 // CreateQuestion adds a new question to an existing form.
-// It performs the following operations:
-//  1. Persists the question in the repository
-//  2. Retrieves the updated form
-//  3. Publishes a "form.updated" event (with retry logic)
-//  4. Updates the form in cache (with retry logic)
-//
-// Parameters:
-//   - question: Pointer to the Question entity to create
-//
-// Returns:
-//   - error: Any error that occurs during the operation
 func (s *Service) CreateQuestion(question *entity.Question) error {
-	if err := s.repo.Create(question); err != nil {
-		return err
+	if question == nil {
+		return errors.New("question cannot be nil")
 	}
 
+	// 1. Critical operation first (database)
+	if err := s.repo.Create(question); err != nil {
+		return fmt.Errorf("failed to create question in repository: %w", err)
+	}
+
+	// 2. Get updated form
 	form, err := s.repo.Get(question.FormID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to retrieve updated form: %w", err)
 	}
 
-	cherr := make(chan error, 1)
+	// 3. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
 
+	// Cache operation
+	wg.Add(1)
 	go func() {
-		cherr <- retrier.Do(3, 5, func() error {
-			return s.publisher.Publish(form, "form.updated")
-		})
-	}()
-
-	if err = retrier.Do(3, 5, func() error {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
 
-		return s.casher.AddToCash(ctx, form.ID.String(), form)
-	}); err != nil {
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.AddToCash(ctx, form.ID.String(), form)
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
+	}()
+
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
-	return <-cherr
+	return nil
 }
 
 // UpdateStatus changes the closed/open status of a form.
-// It performs the following operations:
-//  1. Updates the status in the repository
-//  2. Retrieves the updated form
-//  3. Updates the form in cache (with retry logic)
-//  4. Publishes a "form.created" event (note: potentially should be "form.updated")
-//
-// Parameters:
-//   - form_id: String UUID of the form to update
-//   - closed: Boolean indicating new status (true = closed)
-//
-// Returns:
-//   - error: Any error that occurs during the operation
-func (s *Service) UpdateStatus(form_id string, closed bool) error {
-	uid, err := uuid.Parse(form_id)
+func (s *Service) UpdateStatus(formID uuid.UUID, closed bool) error {
+	// 1. Critical operation first (database)
+	if err := s.repo.Update(formID, "Closed", closed); err != nil {
+		return fmt.Errorf("failed to update form status in repository: %w", err)
+	}
+
+	// 2. Get updated form
+	form, err := s.repo.Get(formID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to retrieve updated form: %w", err)
 	}
 
-	if err = s.repo.Update(uid, "Closed", closed); err != nil {
-		return err
-	}
+	// 3. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
 
-	form, err := s.repo.Get(uid)
-	if err != nil {
-		return err
-	}
-
-	cherr := make(chan error, 1)
-
+	// Cache operation
+	wg.Add(1)
 	go func() {
-		cherr <- retrier.Do(3, 5, func() error {
-			ctx, cancel := s.getContext()
-			defer cancel()
+		defer wg.Done()
+		ctx, cancel := s.getContext()
+		defer cancel()
 
-			return s.casher.AddToCash(ctx, form_id, form)
-		})
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.AddToCash(ctx, formID.String(), form)
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
 	}()
 
-	if err = retrier.Do(3, 5, func() error {
-		return s.publisher.Publish(form, "form.created")
-	}); err != nil {
-		return err
-	}
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
 
-	if err = <-cherr; err != nil {
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
@@ -172,84 +202,109 @@ func (s *Service) UpdateStatus(form_id string, closed bool) error {
 }
 
 // Update modifies multiple fields of a form at once.
-// It performs the following operations:
-//  1. Updates fields in the repository
-//  2. Updates the cache with new values (with retry logic)
-//  3. Publishes a "form.updated" event (with retry logic)
-//
-// Parameters:
-//   - formID: UUID of the form to update
-//   - values: Interface containing the new field values
-//
-// Returns:
-//   - error: Any error that occurs during the operation
 func (s *Service) Update(formID uuid.UUID, values any) error {
-	if err := s.repo.UpdateMany(formID, values); err != nil {
-		return err
+	if values == nil {
+		return errors.New("values cannot be nil")
 	}
 
-	cherr := make(chan error, 1)
+	// 1. Critical operation first (database)
+	if err := s.repo.UpdateMany(formID, values); err != nil {
+		return fmt.Errorf("failed to update form in repository: %w", err)
+	}
 
+	// 2. Get updated form to ensure cache consistency
+	form, err := s.repo.Get(formID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve updated form: %w", err)
+	}
+
+	// 3. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
+
+	// Cache operation (cache the complete form, not just values)
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
 
-		cherr <- retrier.Do(3, 5, func() error {
-			return s.casher.AddToCash(ctx, formID.String(), values)
-		})
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.AddToCash(ctx, formID.String(), form)
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
 	}()
 
-	if err := retrier.Do(3, 5, func() error {
-		return s.publisher.Publish(values, "form.updated")
-	}); err != nil {
+	// Publish operation (publish the complete form, not just values)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
-	return <-cherr
+	return nil
 }
 
 // UpdateDescription changes the description of a form.
-// It performs the following operations:
-//  1. Updates the description in the repository
-//  2. Retrieves the updated form
-//  3. Updates the form in cache (with retry logic)
-//  4. Publishes a "form.updated" event (with retry logic)
-//
-// Parameters:
-//   - formId: String UUID of the form to update
-//   - desc: New description text
-//
-// Returns:
-//   - error: Any error that occurs during the operation
-func (s *Service) UpdateDescription(formId string, desc string) error {
-	uid, err := uuid.Parse(formId)
+func (s *Service) UpdateDescription(formID uuid.UUID, desc string) error {
+	// 1. Critical operation first (database)
+	if err := s.repo.Update(formID, "Description", desc); err != nil {
+		return fmt.Errorf("failed to update form description in repository: %w", err)
+	}
+
+	// 2. Get updated form
+	form, err := s.repo.Get(formID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to retrieve updated form: %w", err)
 	}
 
-	if err = s.repo.Update(uid, "Description", desc); err != nil {
-		return err
-	}
+	// 3. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
 
-	form, err := s.repo.Get(uid)
-	if err != nil {
-		return err
-	}
-
-	cherr := make(chan error, 1)
-
+	// Cache operation
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
 
-		cherr <- retrier.Do(3, 5, func() error {
-			return s.casher.AddToCash(ctx, formId, form)
-		})
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.AddToCash(ctx, formID.String(), form)
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
 	}()
 
-	if err = retrier.Do(3, 5, func() error {
-		return s.publisher.Publish(form, "form.updated")
-	}); err != nil {
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
@@ -257,91 +312,105 @@ func (s *Service) UpdateDescription(formId string, desc string) error {
 }
 
 // DeleteForm removes a form from the system.
-// It performs the following operations:
-//  1. Deletes the form from the repository
-//  2. Removes the form from cache (with retry logic)
-//  3. Publishes a "form.deleted" event (with retry logic)
-//
-// Parameters:
-//   - formId: String UUID of the form to delete
-//
-// Returns:
-//   - error: Any error that occurs during the operation
-func (s *Service) DeleteForm(formId string) error {
-	uid, err := uuid.Parse(formId)
-	if err != nil {
-		return err
+func (s *Service) DeleteForm(formID uuid.UUID) error {
+	// 1. Critical operation first (database)
+	if err := s.repo.DeleteForm(formID); err != nil {
+		return fmt.Errorf("failed to delete form from repository: %w", err)
 	}
 
-	if err = s.repo.DeleteForm(uid); err != nil {
-		return err
-	}
+	// 2. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
 
-	cherr := make(chan error, 1)
-
+	// Cache removal operation
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
 
-		cherr <- retrier.Do(3, 5, func() error {
-			return s.casher.RemoveFromCash(ctx, formId)
-		})
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.RemoveFromCash(ctx, formID.String())
+		}); err != nil {
+			errChan <- fmt.Errorf("cache removal error: %w", err)
+		}
 	}()
 
-	if err = retrier.Do(3, 5, func() error {
-		return s.publisher.Publish(struct {
-			FormID string
-		}{
-			FormID: formId,
-		}, "form.deleted")
-	}); err != nil {
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(struct {
+				FormID string `json:"form_id"`
+			}{
+				FormID: formID.String(),
+			}, "form.deleted")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
-	return <-cherr
+	return nil
 }
 
 // DeleteQuestion removes a question from a form.
-// It performs the following operations:
-//  1. Deletes the question from the repository
-//  2. Retrieves the updated form
-//  3. Updates the form in cache (with retry logic)
-//  4. Publishes a "form.updated" event
-//
-// Parameters:
-//   - formId: String UUID of the form containing the question
-//   - orderNumber: The order number of the question to delete
-//
-// Returns:
-//   - error: Any error that occurs during the operation
-func (s *Service) DeleteQuestion(formId string, orderNumber uint) error {
-	uid, err := uuid.Parse(formId)
+func (s *Service) DeleteQuestion(formID uuid.UUID, orderNumber uint) error {
+	// 1. Critical operation first (database)
+	if err := s.repo.DeleteQuestion(formID, orderNumber); err != nil {
+		return fmt.Errorf("failed to delete question from repository: %w", err)
+	}
+
+	// 2. Get updated form
+	form, err := s.repo.Get(formID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to retrieve updated form: %w", err)
 	}
 
-	if err = s.repo.DeleteQuestion(uid, orderNumber); err != nil {
-		return err
-	}
+	// 3. Run non-critical operations concurrently
+	var wg sync.WaitGroup
+	errChan := make(chan error, 2)
 
-	form, err := s.repo.Get(uid)
-	if err != nil {
-		return err
-	}
-
-	cherr := make(chan error, 1)
+	// Cache operation
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ctx, cancel := s.getContext()
 		defer cancel()
 
-		cherr <- retrier.Do(3, 5, func() error {
-			return s.casher.AddToCash(ctx, formId, form)
-		})
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.casher.AddToCash(ctx, formID.String(), form)
+		}); err != nil {
+			errChan <- fmt.Errorf("cache error: %w", err)
+		}
 	}()
 
-	if err = s.publisher.Publish(form, "form.updated"); err != nil {
+	// Publish operation
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := retrier.Do(DefaultRetryAttempts, DefaultRetryDelay, func() error {
+			return s.publisher.Publish(form, "form.updated")
+		}); err != nil {
+			errChan <- fmt.Errorf("publish error: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	// Return first error if any
+	for err := range errChan {
 		return err
 	}
 
-	return <-cherr
+	return nil
 }
