@@ -23,6 +23,7 @@ type (
 	// Form represents a questionnaire or survey form
 	Form struct {
 		ID          uuid.UUID  `gorm:"type:uuid;primaryKey"` // Unique identifier
+		Title       string     // Title of the form
 		Description string     // Form description or purpose
 		Closed      bool       // Whether form is closed for responses
 		Questions   []Question `gorm:"foreignKey:FormID"` // Collection of form questions
