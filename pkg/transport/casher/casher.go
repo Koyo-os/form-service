@@ -22,8 +22,15 @@ type Casher struct {
 }
 
 func (c *Casher) RemoveFromCash(ctx context.Context, key string) error {
-	//TODO implement me
-	panic("implement me")
+	res := c.client.Del(ctx, key)
+
+	if res.Err() != nil {
+		c.logger.Error("error delete from redis",
+			zap.String("key", key),
+			zap.Error(res.Err()))
+	}
+
+	return nil
 }
 
 // Init creates a new Casher instance with the provided Redis client and logger
@@ -33,6 +40,14 @@ func Init(client *redis.Client, logger *logger.Logger) *Casher {
 		client: client,
 		logger: logger,
 	}
+}
+
+func (c *Casher) Close() error {
+	return c.client.Close()
+}
+
+func (c *Casher) IsHealthy() bool {
+	return c.client.Ping(context.Background()).Err() == nil
 }
 
 // AddToCash stores a payload in Redis using the provided key
