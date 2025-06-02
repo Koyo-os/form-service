@@ -4,12 +4,13 @@ package listener
 import (
 	"context"
 	"encoding/json"
-	"github.com/bytedance/sonic"
 
 	"github.com/Koyo-os/form-service/internal/entity"
 	"github.com/Koyo-os/form-service/internal/service"
 	"github.com/Koyo-os/form-service/pkg/config"
 	"github.com/Koyo-os/form-service/pkg/logger"
+	"github.com/bytedance/sonic"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +37,11 @@ func Init(
 	}
 }
 
-func (list *Listener) Close() {}
+func (list *Listener) Close() error {
+	close(list.inputChan)
+
+	return nil
+}
 
 // Listen starts the event listening loop
 // It processes incoming events based on their type and routes them to appropriate handlers
@@ -97,7 +102,16 @@ func (list *Listener) Listen(ctx context.Context) {
 					continue
 				}
 
-				if err := list.service.DeleteForm(req.FormID); err != nil {
+				id, err := uuid.Parse(req.FormID)
+				if err != nil {
+					list.logger.Error("error parse form id",
+						zap.String("event_id", event.ID),
+						zap.String("event_type", event.Type),
+						zap.Error(err))
+					continue
+				}
+
+				if err = list.service.DeleteForm(id); err != nil {
 					list.logger.Error("error delete form",
 						zap.String("event_id", event.ID),
 						zap.String("form_id", req.FormID),
