@@ -53,6 +53,10 @@ func (p *Publisher) Close() error {
 	return p.conn.Close()
 }
 
+func (p *Publisher) IsHealthy() bool {
+	return !p.conn.IsClosed()
+}
+
 // Publish sends a message to the message broker
 // Parameters:
 //   - poll: Data to be published (will be JSON encoded)
